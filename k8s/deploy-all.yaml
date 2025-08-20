@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: microservices
+---
+# Apply all services in order
+# 1. PostgreSQL (with persistent storage)
+# 2. Zookeeper
+# 3. Kafka
+# 4. Sender Service
+# 5. Receiver Service
+
+# Run with: kubectl apply -f k8s/deploy-all.yaml
+# This file references all other yaml files for easy deployment

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: receiver-service
+  labels:
+    app: receiver-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: receiver-service
+  template:
+    metadata:
+      labels:
+        app: receiver-service
+    spec:
+      containers:
+      - name: receiver-service
+        image: receiver-service:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8081
+        env:
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:postgresql://postgres:5432/receiverdb"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: "receiver"
+        - name: SPRING_DATASOURCE_PASSWORD
+          value: "receiverpass"
+        - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 30

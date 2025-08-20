@@ -4,65 +4,112 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a multi-service Spring Boot project designed for Kubernetes deployment, featuring a modern microservices architecture with web interface and container orchestration.
+This is a complete microservices architecture with Kafka message broker, featuring:
+- **Sender Service**: Spring Boot web application that publishes messages to Kafka
+- **Receiver Service**: Spring Boot consumer that reads from Kafka and stores in PostgreSQL with scheduled processing
+- **Kafka**: Modern KRaft-mode message broker (no Zookeeper required)
+- **PostgreSQL**: Persistent database with local storage
+- **Full Kubernetes Deployment**: Production-ready manifests for all services
+
+## Architecture Flow
+
+1. **Sender Service** (Port 8080): Web form + REST API → Publishes to Kafka topic "sender-messages"
+2. **Kafka**: Message broker with topic "sender-messages" 
+3. **Receiver Service** (Port 8081): Consumes from Kafka → Saves to PostgreSQL + Scheduled processing every 10 seconds
+4. **PostgreSQL**: Persistent storage with volume mount at /tmp/postgres-data
 
 ## Project Structure
 
 - **Root Directory**: Parent folder for multiple Spring Boot services
-- **sender-service/**: Complete Spring Boot application with web interface
+- **sender-service/**: Spring Boot producer service
   - Maven project with Spring Boot 3.4.0 and Java 24
-  - Web UI with Thymeleaf templates showing Java version
+  - Kafka producer configuration and templates
+  - Web UI with Thymeleaf templates
   - REST API endpoints for health checks and message sending
-  - Spring Actuator with Prometheus metrics
-  - Docker containerization with Java 24 runtime
-  - Complete Kubernetes manifests (deployment, service, ingress)
+  - Docker containerization and Kubernetes manifests
+- **receiver-service/**: Spring Boot consumer service
+  - Maven project with Spring Boot 3.4.0 and Java 24
+  - Kafka consumer with @KafkaListener
+  - JPA entities and PostgreSQL integration
+  - Scheduled tasks every 10 seconds for message processing
+  - REST API for viewing stored messages and stats
+- **k8s/**: Infrastructure manifests
+  - PostgreSQL with persistent volume
+  - Kafka broker in KRaft mode
+  - Deployment orchestration scripts
 
 ## Current Technology Stack
 
 - **Java**: 24 (Eclipse Temurin)
 - **Spring Boot**: 3.4.0
 - **Build Tool**: Maven
-- **Web Framework**: Spring MVC with Thymeleaf
+- **Message Broker**: Apache Kafka 3.8.1 in KRaft mode (Zookeeper-free)
+- **Database**: PostgreSQL 15 with persistent volume storage
+- **Web Framework**: Spring MVC with Thymeleaf (sender only)
+- **Data Access**: Spring Data JPA with Hibernate
 - **Development**: Spring Boot DevTools for hot reload
 - **Containerization**: Docker with openjdk:24-jdk-slim
 - **Orchestration**: Kubernetes with nginx ingress controller
 - **Monitoring**: Spring Actuator + Prometheus metrics
+- **Scheduling**: Spring @Scheduled tasks (10-second intervals)
 
 ## Development Workflows
 
 ### Local Development with Hot Reload (Recommended)
 ```bash
-cd sender-service
 # Ensure Java 24 is active
 export JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-24.0.2.12-hotspot"
 
-# Start with DevTools (auto-restart on code changes)
+# Start sender service with DevTools
+cd sender-service
 mvn spring-boot:run
 # Access: http://localhost:8080
-# Changes to Java/HTML/Properties auto-restart the app
+
+# Start receiver service with DevTools (separate terminal)
+cd receiver-service  
+mvn spring-boot:run
+# Access: http://localhost:8081/api/receiver/messages
 ```
 
 ### Full Build and Package
 ```bash
-cd sender-service
-mvn clean package
-docker build -t sender-service:latest .
+# Build both services
+./build-and-deploy.sh
+
+# Or manually:
+cd sender-service && mvn clean package && docker build -t sender-service:latest .
+cd receiver-service && mvn clean package && docker build -t receiver-service:latest .
+```
+
+### Kubernetes Deployment
+```bash
+# Deploy entire microservices architecture
+./build-and-deploy.sh
+
+# Or step by step:
+kubectl apply -f k8s/postgresql.yaml
+kubectl apply -f k8s/kafka.yaml
+kubectl apply -f sender-service/k8s/
+kubectl apply -f receiver-service/k8s/
+
+# Test the message flow
+./test-flow.sh
 ```
 
 ### Kubernetes Operations
 ```bash
-# Deploy all resources
-kubectl apply -f sender-service/k8s/
+# Check all pods
+kubectl get pods
 
-# Update deployment with new image
-kubectl rollout restart deployment sender-service
-
-# Check deployment status
-kubectl get pods -l app=sender-service
+# Check logs for each service
 kubectl logs -l app=sender-service
+kubectl logs -l app=receiver-service
+kubectl logs -l app=kafka
+kubectl logs -l app=postgres
 
 # Port forwarding for testing
 kubectl port-forward service/sender-service 8080:80
+kubectl port-forward service/receiver-service 8081:80
 ```
 
 ## Access Methods
@@ -131,3 +178,4 @@ kubectl port-forward service/sender-service 8080:80
 - **Service Type**: ClusterIP for production readiness with ingress
 - **Replicas**: Currently set to 1, easily scalable to multiple instances
 - **DevTools**: Included for development, automatically disabled in production
+- we use java 24

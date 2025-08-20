@@ -1,0 +1,6 @@
+com\example\receiver\config\KafkaConfig.class
+com\example\receiver\controller\MessageController.class
+com\example\receiver\entity\Message.class
+com\example\receiver\service\MessageService.class
+com\example\receiver\ReceiverServiceApplication.class
+com\example\receiver\repository\MessageRepository.class
