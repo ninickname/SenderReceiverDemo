@@ -13,10 +13,11 @@ This is a complete microservices architecture with Kafka message broker, featuri
 
 ## Architecture Flow
 
-1. **Sender Service** (Port 8080): Web form + REST API → Publishes to Kafka topic "sender-messages"
-2. **Kafka**: Message broker with topic "sender-messages" 
+1. **Sender Service** (Port 8080): Web form + REST API → Publishes to Kafka topics "sender-messages" and "keepalive"
+2. **Kafka**: Message broker with topics "sender-messages" and "keepalive"
 3. **Receiver Service** (Port 8081): Consumes from Kafka → Saves to PostgreSQL + Scheduled processing every 10 seconds
 4. **PostgreSQL**: Persistent storage with volume mount at /tmp/postgres-data
+5. **Heartbeat System**: Both services maintain 1-second heartbeats for monitoring
 
 ## Project Structure
 
@@ -26,13 +27,15 @@ This is a complete microservices architecture with Kafka message broker, featuri
   - Kafka producer configuration and templates
   - Web UI with Thymeleaf templates
   - REST API endpoints for health checks and message sending
+  - Scheduled heartbeat generation every 1 second to keepalive topic
   - Docker containerization and Kubernetes manifests
 - **receiver-service/**: Spring Boot consumer service
   - Maven project with Spring Boot 3.4.0 and Java 24
-  - Kafka consumer with @KafkaListener
-  - JPA entities and PostgreSQL integration
+  - Kafka consumer with @KafkaListener for messages and heartbeats
+  - JPA entities and PostgreSQL integration with heartbeat tables
   - Scheduled tasks every 10 seconds for message processing
-  - REST API for viewing stored messages and stats
+  - Scheduled heartbeat generation every 1 second
+  - REST API for viewing stored messages, stats, and heartbeat monitoring
 - **k8s/**: Infrastructure manifests
   - PostgreSQL with persistent volume
   - Kafka broker in KRaft mode
@@ -51,7 +54,7 @@ This is a complete microservices architecture with Kafka message broker, featuri
 - **Containerization**: Docker with openjdk:24-jdk-slim
 - **Orchestration**: Kubernetes with nginx ingress controller
 - **Monitoring**: Spring Actuator + Prometheus metrics
-- **Scheduling**: Spring @Scheduled tasks (10-second intervals)
+- **Scheduling**: Spring @Scheduled tasks (10-second intervals for processing, 1-second for heartbeats)
 
 ## Development Workflows
 
@@ -110,6 +113,7 @@ kubectl logs -l app=postgres
 # Port forwarding for testing
 kubectl port-forward service/sender-service 8080:80
 kubectl port-forward service/receiver-service 8081:80
+kubectl port-forward service/postgres 5432:5432
 ```
 
 ## Access Methods
@@ -121,9 +125,15 @@ kubectl port-forward service/sender-service 8080:80
 ```
 
 ### Production (Ingress)
-- **Hostname**: sender-service.local
-- **Setup**: Add `127.0.0.1 sender-service.local` to hosts file
-- **Access**: http://sender-service.local
+- **Hostnames**: sender-service.local, receiver-service.local
+- **Setup**: Add to hosts file:
+  ```
+  127.0.0.1 sender-service.local
+  127.0.0.1 receiver-service.local
+  ```
+- **Access**: 
+  - Sender: http://sender-service.local
+  - Receiver: http://receiver-service.local
 
 ## Application Features
 
@@ -133,12 +143,62 @@ kubectl port-forward service/sender-service 8080:80
 - **Health Checks**: Built-in endpoints for Kubernetes probes
 
 ### API Endpoints
+
+**Sender Service:**
 - `GET /` - Web interface
 - `POST /submit` - Form submission
 - `GET /api/sender/health` - Health check
 - `POST /api/sender/send` - REST API for messages
 - `GET /actuator/health` - Kubernetes health probe
 - `GET /actuator/prometheus` - Metrics endpoint
+
+**Receiver Service:**
+- `GET /api/receiver/messages` - View stored messages
+- `GET /api/receiver/stats` - Message statistics
+- `GET /api/heartbeat/sender?limit=N` - Recent sender heartbeats
+- `GET /api/heartbeat/receiver?limit=N` - Recent receiver heartbeats
+- `GET /api/heartbeat/stats` - Heartbeat statistics and monitoring
+- `GET /actuator/health` - Kubernetes health probe
+- `GET /actuator/prometheus` - Metrics endpoint
+
+## Heartbeat Monitoring System
+
+### Overview
+Both services implement a comprehensive heartbeat system for real-time monitoring:
+
+### Sender Service Heartbeats
+- Sends heartbeat every **1 second** to Kafka topic `keepalive`
+- Message format: `{"service":"sender","timestamp":"2025-08-20 22:49:30","status":"alive"}`
+- Automatic scheduling via Spring `@Scheduled`
+
+### Receiver Service Heartbeats
+- **Consumes sender heartbeats**: Reads from `keepalive` topic and stores in `sender_heartbeats` table
+- **Generates own heartbeats**: Creates entry in `receiver_heartbeats` table every **1 second**
+- Dual consumer groups: `receiver-group` for messages, `heartbeat-group` for keepalive
+
+### Database Tables
+- **`sender_heartbeats`**: Stores sender service heartbeat data with Kafka metadata
+- **`receiver_heartbeats`**: Stores receiver service self-generated heartbeats
+- **`messages`**: Regular application messages from sender-messages topic
+
+### Monitoring Endpoints
+- `GET /api/heartbeat/stats` - Overall heartbeat statistics and latest entries
+- `GET /api/heartbeat/sender?limit=N` - Recent sender heartbeats with timestamps
+- `GET /api/heartbeat/receiver?limit=N` - Recent receiver heartbeats with timestamps
+
+### Database Access
+For IntelliJ Database Tools or external connections:
+```bash
+# Set up port forwarding
+kubectl port-forward service/postgres 5432:5432
+
+# Connection details:
+Host: localhost
+Port: 5432
+Database: receiverdb
+Username: receiver
+Password: receiverpass
+```
 
 ## Architecture Benefits
 
